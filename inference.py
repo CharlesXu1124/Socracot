@@ -15,6 +15,7 @@ import math
 import struct
 from ultralytics import RTDETR
 import json
+from openai import OpenAI
 
 
 coco_classes = [
@@ -59,17 +60,49 @@ class RosDetrNode(Node):
         # prevent variable not used warning
         self.img_subscription
 
+        self.client = OpenAI()
+
+
+
     def img_callback(self, Image):
         self.counter += 1
-        
-        if self.counter < 10:
+
+        if self.counter == 1:
+            self.response = self.client.chat.completions.create(
+                model="gpt-4o",
+                messages=[
+                    {
+                    "role": "system",
+                    "content": [
+                        {
+                        "type": "text",
+                        "text": "You are a Tiago robot in simulation environment, \
+                            you are equipped with Astra depth camera which can give you \
+                            information about detected objects and their positions relative \
+                            to you, you already have the sensors activated and initialized, \
+                            you are tasked with moving to the beer bottle on the table, \
+                            please break down the task into smaller substasks, please give your answers \
+                            wrapped in curly braces and do not output anything else"
+                        }
+                    ]
+                    }
+                ],
+                temperature=1,
+                max_tokens=256,
+                top_p=1,
+                frequency_penalty=0,
+                presence_penalty=0
+            )
+
+            print(self.response)
+
+        if self.counter < 10 and (self.counter % 10 == 0) and self.depth is not None:
             cv_image = self.bridge.imgmsg_to_cv2(Image, desired_encoding='passthrough')
             image_rgb = cv2.cvtColor(cv_image, cv2.COLOR_BGRA2RGB)
             results = self.model(image_rgb, save=False)[0]
 
             boxes = results.boxes.data.tolist()
-            # name = self.model.names
-            
+
             if len(self.depth.data) == 0:
                 return
 
@@ -77,60 +110,60 @@ class RosDetrNode(Node):
                 left, top, right, bottom = int(obj[0]), int(obj[1]), int(obj[2]), int(obj[3])
                 confidence = obj[4]
                 label = int(obj[5])
-                
+
                 center_x = int((left + right) / 2)
                 center_y = int((top + bottom) / 2)
-                
+
                 offset = center_y * 640 + center_x
 
-                x = struct.unpack("f", bytes([self.depth.data[offset * 16],
-                    self.depth.data[offset * 16 + 1],
-                    self.depth.data[offset * 16 + 2],
-                    self.depth.data[offset * 16 + 3]
+                x = struct.unpack("f", bytes([self.depth.data[offset * 12],
+                    self.depth.data[offset * 12 + 1],
+                    self.depth.data[offset * 12 + 2],
+                    self.depth.data[offset * 12 + 3]
                 ]))
 
-                y = struct.unpack("f", bytes([self.depth.data[offset * 16 + 4],
-                    self.depth.data[offset * 16 + 5],
-                    self.depth.data[offset * 16 + 6],
-                    self.depth.data[offset * 16 + 7]
+                y = struct.unpack("f", bytes([self.depth.data[offset * 12 + 4],
+                    self.depth.data[offset * 12 + 5],
+                    self.depth.data[offset * 12 + 6],
+                    self.depth.data[offset * 12 + 7]
                 ]))
 
-                z = struct.unpack("f", bytes([self.depth.data[offset * 16 + 8],
-                    self.depth.data[offset * 16 + 9],
-                    self.depth.data[offset * 16 + 10],
-                    self.depth.data[offset * 16 + 11]
+                z = struct.unpack("f", bytes([self.depth.data[offset * 12 + 8],
+                    self.depth.data[offset * 12 + 9],
+                    self.depth.data[offset * 12 + 10],
+                    self.depth.data[offset * 12 + 11]
                 ]))
 
                 if math.isnan(x[0]) or math.isnan(y[0]) or math.isnan(z[0]):
                     print("invalid distance")
                     return
-                
+
                 objects = {
-                    "label": coco_classes[label],
-                    "position": {
+                    "detected object": coco_classes[label],
+                    "object position": {
                         "x": x,
                         "y": y,
                         "z": z
-                    }
+                    },
+                    "confidence": confidence,
                 }
-                
+
                 self.data.append(objects)
-                
+
                 print(self.data)
-            
+
             # clear the detected objects
             self.data = []
 
             # Create a PointCloud2 message
             header = Header()
             header.frame_id = 'base_link'  # Change this frame_id as needed
-            
+
     def depth_callback(self, Image):
         self.depth = Image
-            
-    def construct_json(self):
+
+    def construct_prompt(self):
         pass
-        
 
 def main(args=None):
     rclpy.init(args=args)
