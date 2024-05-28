@@ -8,6 +8,7 @@ from sensor_msgs.msg import Image
 from sensor_msgs.msg import PointCloud2
 from std_msgs.msg import Float32MultiArray
 from std_msgs.msg import Header
+from geometry_msgs.msg import Twist
 from cv_bridge import CvBridge
 
 from numpy import asarray
@@ -32,8 +33,8 @@ coco_classes = [
 class RosDetrNode(Node):
     def __init__(self):
         super().__init__("ros_detr_node")
-        self.yolo_publisher = self.create_publisher(Float32MultiArray, '/yolo_result', 10)
-        self.img_subscription = self.create_subscription(
+        self.robot_command_publisher = self.create_publisher(Twist, '/cmd_vel', 10)
+        self.img_subscripber = self.create_subscription(
             Image,
             '/Tiago_Lite/Astra_rgb/image_color',
             self.img_callback,
@@ -58,7 +59,8 @@ class RosDetrNode(Node):
         self.depth = PointCloud2()
 
         # prevent variable not used warning
-        self.img_subscription
+        self.img_subscripber
+        self.depth_subscriber
 
         self.client = OpenAI()
 
@@ -95,6 +97,18 @@ class RosDetrNode(Node):
             )
 
             print(self.response)
+
+            # Create a Twist message
+            twist = Twist()
+            # header.frame_id = 'base_link'  # Change this frame_id as needed
+            twist.linear.x = 0.0
+            twist.linear.y = 0.0
+            twist.linear.z = 0.0
+            twist.angular.x = 0.0
+            twist.angular.y = 0.0
+            twist.angular.z = 0.3
+
+            self.robot_command_publisher.publish(twist)
 
         if self.counter < 10 and (self.counter % 10 == 0) and self.depth is not None:
             cv_image = self.bridge.imgmsg_to_cv2(Image, desired_encoding='passthrough')
@@ -154,10 +168,6 @@ class RosDetrNode(Node):
 
             # clear the detected objects
             self.data = []
-
-            # Create a PointCloud2 message
-            header = Header()
-            header.frame_id = 'base_link'  # Change this frame_id as needed
 
     def depth_callback(self, Image):
         self.depth = Image
