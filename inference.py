@@ -16,6 +16,7 @@ import math
 import struct
 from ultralytics import RTDETR
 import json
+import re
 from openai import OpenAI
 
 
@@ -70,6 +71,8 @@ class RosDetrNode(Node):
 
         self.is_planning = False
         
+        self.func_str = ""
+
         self.init_task()
         
     def init_task(self):
@@ -90,16 +93,7 @@ class RosDetrNode(Node):
                 "content": [
                     {
                     "type": "text",
-                    "text": "You are an expert in robotics localization and navigation. You are a Tiago robot in simulation environment, you are equipped with Astra depth camera which can give you information about detected objects and their positions relative to you, you also have two wheels on your chassis and you can rotate in place or move linearly. You are tasked with moving to 1m range of the beer bottle on the table, please complete the move_robot function which sends command to the robot to complete the task. Please only give the code for the python function and do not output anything else, please also specify the linear and angular velocities around 3 axis in the code. Please only output the completed code for the python function move_robot, please also make sure to output linear and angular velocities in 3 axes in the code. You should handle cases in which the object is not detected at first, and you should actively make the robots explore the environment if the object is not detected at first. Please make the function robust and reliably lead to the goal. "
-                    }
-                ]
-                },
-                {
-                "role": "assistant",
-                "content": [
-                    {
-                    "type": "text",
-                    "text": "```python\ndef move_robot(self):\n    # First, check if the beer bottle is detected in the current data\n    target_object = None\n    for detected in self.data:\n        if detected[\"detected object\"] == \"bottle\":\n            target_object = detected\n            break\n    \n    # If the beer bottle is not detected, make the robot rotate to explore\n    if target_object is None:\n        cmd_msg = Twist()\n        # Set a small angular velocity to rotate in place\n        cmd_msg.angular.z = 0.2  # Angular velocity around the z-axis\n        self.robot_command_publisher.publish(cmd_msg)\n        self.get_logger().info(\"Searching for the beer bottle...\")\n        return\n    \n    # If the beer bottle is detected, calculate the relative position and move towards it\n    target_x = target_object[\"object position\"][\"x\"][0]\n    target_y = target_object[\"object position\"][\"y\"][0]\n    target_z = target_object[\"object position\"][\"z\"][0]\n    \n    self.get_logger().info(f\"Beer bottle detected at (x: {target_x}, y: {target_y}, z: {target_z})\")\n    \n    # Compute distance to the target\n    distance = math.sqrt(target_x**2 + target_y**2 + target_z**2)\n    \n    # If the robot is within 1 meter of the target\n    if distance <= 1.0:\n        cmd_msg = Twist()\n        self.get_logger().info(\"Target is within 1 meter range, stopping.\")\n        # Stop the robot\n        cmd_msg.linear.x = 0.0\n        cmd_msg.linear.y = 0.0\n        cmd_msg.linear.z = 0.0\n        cmd_msg.angular.x = 0.0\n        cmd_msg.angular.y = 0.0\n        cmd_msg.angular.z = 0.0\n        self.robot_command_publisher.publish(cmd_msg)\n        return\n    \n    # If the robot is not within 1 meter, move towards the target\n    cmd_msg = Twist()\n    \n    # Control linear velocities\n    # Move in the x direction\n    cmd_msg.linear.x = 0.1 * target_x  # Tune the gain as needed\n    # Move in the y direction\n    cmd_msg.linear.y = 0.1 * target_y  # Tune the gain as needed\n    # No movement in z direction for ground robot\n    cmd_msg.linear.z = 0.0\n    \n    # Control angular velocities\n    # No rotation around x and y axes for ground robot\n    cmd_msg.angular.x = 0.0\n    cmd_msg.angular.y = 0.0\n    # Rotate around z axis to face the target\n    cmd_msg.angular.z = -0.1 * math.atan2(target_y, target_x)  # Tune the gain as needed\n    \n    self.robot_command_publisher.publish(cmd_msg)\n```"
+                    "text": "You are an expert in robotics localization and navigation. You are a Tiago robot in simulation environment, you are equipped with Astra depth camera which can give you information about detected objects and their positions relative to you, you also have two wheels on your chassis and you can rotate in place or move linearly. You are tasked with moving to 1m range of the beer bottle on the table, please complete the move_robot function which sends command to the robot to complete the task. Please only give the code for the python function and do not output anything else, please also specify the linear and angular velocities around 3 axis in the code. Please only output the completed code for the python function move_robot, please also make sure to output linear and angular velocities in 3 axes in the code. You should handle cases in which the object is not detected at first, and you should actively make the robots explore the environment if the object is not detected at first. Please make the function robust and reliably lead to the goal. Please do not output anything else other than the code. Do not output ```python. "
                     }
                 ]
                 }
@@ -110,7 +104,10 @@ class RosDetrNode(Node):
             frequency_penalty=0,
             presence_penalty=0
         )
-        print(response.choices[0].message.content)
+        self.func_str = response.choices[0].message.content
+
+        print("generated function: \n" + self.func_str)
+
 
     # update observation: objects detected and their positions relative to the robot
     def img_callback(self, Image):
@@ -174,7 +171,7 @@ class RosDetrNode(Node):
                 self.data.append(detected_objects)
 
             # move every 20 frames
-            self.move_robot()
+            self.execute_robot_code()
             # clear detected objects
             self.data = []
             # set the planning flag to false
@@ -184,70 +181,11 @@ class RosDetrNode(Node):
     def depth_callback(self, Image):
         self.depth = Image
 
-    # move the robot to complete task
-    def move_robot(self):
-        # TODO calculate the linear speed in x, y, z direction
-        # TODO calculate the angular speed around x, y, and z axis
-
-        # First, check if the beer bottle is detected in the current data
-        target_object = None
-        for detected in self.data:
-            if detected["detected object"] == "bottle":
-                target_object = detected
-                break
-
-        # If the beer bottle is not detected, make the robot rotate to explore
-        if target_object is None:
-            cmd_msg = Twist()
-            # Set a small angular velocity to rotate in place
-            cmd_msg.angular.z = 0.2  # Angular velocity around the z-axis
-            self.robot_command_publisher.publish(cmd_msg)
-            self.get_logger().info("Searching for the beer bottle...")
-            return
-
-        # If the beer bottle is detected, calculate the relative position and move towards it
-        target_x = target_object["object position"]["x"][0]
-        target_y = target_object["object position"]["y"][0]
-        target_z = target_object["object position"]["z"][0]
-
-        self.get_logger().info(f"Beer bottle detected at (x: {target_x}, y: {target_y}, z: {target_z})")
-
-        # Compute distance to the target
-        distance = math.sqrt(target_x**2 + target_y**2 + target_z**2)
-
-        # If the robot is within 1 meter of the target
-        if distance <= 1.0:
-            cmd_msg = Twist()
-            self.get_logger().info("Target is within 1 meter range, stopping.")
-            # Stop the robot
-            cmd_msg.linear.x = 0.0
-            cmd_msg.linear.y = 0.0
-            cmd_msg.linear.z = 0.0
-            cmd_msg.angular.x = 0.0
-            cmd_msg.angular.y = 0.0
-            cmd_msg.angular.z = 0.0
-            self.robot_command_publisher.publish(cmd_msg)
-            return
-
-        # If the robot is not within 1 meter, move towards the target
-        cmd_msg = Twist()
-
-        # Control linear velocities
-        # Move in the x direction
-        cmd_msg.linear.x = 0.1 * target_x  # Tune the gain as needed
-        # Move in the y direction
-        cmd_msg.linear.y = 0.1 * target_y  # Tune the gain as needed
-        # No movement in z direction for ground robot
-        cmd_msg.linear.z = 0.0
-
-        # Control angular velocities
-        # No rotation around x and y axes for ground robot
-        cmd_msg.angular.x = 0.0
-        cmd_msg.angular.y = 0.0
-        # Rotate around z axis to face the target
-        cmd_msg.angular.z = -0.1 * math.atan2(target_y, target_x)  # Tune the gain as needed
-
-        self.robot_command_publisher.publish(cmd_msg)
+    # Function to execute the provided code string
+    def execute_robot_code(self):
+        local_vars = {}
+        exec(self.func_str, globals(), local_vars)
+        local_vars["move_robot"](self)
 
 
 def main(args=None):
