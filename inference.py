@@ -67,7 +67,7 @@ class RosDetrNode(Node):
 
         self.client = OpenAI()
 
-        self.task = "moving to the beer bottle on the table"
+        self.task = ""
 
         self.is_planning = False
         
@@ -76,6 +76,7 @@ class RosDetrNode(Node):
         self.init_task()
         
     def init_task(self):
+        self.task = input("Enter the task for the robot: ")
         response = self.client.chat.completions.create(
             model="gpt-4o",
             messages=[
@@ -93,7 +94,7 @@ class RosDetrNode(Node):
                 "content": [
                     {
                     "type": "text",
-                    "text": "You are an expert in robotics localization and navigation. You are a Tiago robot in simulation environment, you are equipped with Astra depth camera which can give you information about detected objects and their positions relative to you, you also have two wheels on your chassis and you can rotate in place or move linearly. You are tasked with moving to 1m range of the beer bottle on the table, please complete the move_robot function which sends command to the robot to complete the task. Please only give the code for the python function and do not output anything else, please also specify the linear and angular velocities around 3 axis in the code. Please only output the completed code for the python function move_robot, please also make sure to output linear and angular velocities in 3 axes in the code. You should handle cases in which the object is not detected at first, and you should actively make the robots explore the environment if the object is not detected at first. Please make the function robust and reliably lead to the goal. Please do not output anything else other than the code. Do not output ```python. "
+                    "text": "You are an expert in robotics localization and navigation. You are a Tiago robot in simulation environment, you are equipped with Astra depth camera which can give you information about detected objects and their positions relative to you, you also have two wheels on your chassis and you can rotate in place or move linearly. You are tasked with {%s}, please complete the move_robot function which sends command to the robot to complete the task. Please only give the code for the python function and do not output anything else, please also specify the linear and angular velocities around 3 axis in the code. Please only output the completed code for the python function move_robot, please also make sure to output linear and angular velocities in 3 axes in the code. You should handle cases in which the object is not detected at first, and you should actively make the robots explore the environment if the object is not detected at first. Please make the function robust and reliably lead to the goal. Please do not output anything else other than the code. Do not output ```python. " % self.task
                     }
                 ]
                 }
