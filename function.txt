@@ -1,0 +1,186 @@
+#!/usr/bin/env python3
+import cv2
+import onnxruntime as ort
+import rclpy
+from rclpy.node import Node
+import numpy as np
+from sensor_msgs.msg import Image
+from sensor_msgs.msg import PointCloud2
+from nav_msgs.msg import Odometry
+from std_msgs.msg import Float32MultiArray
+from std_msgs.msg import Header
+from geometry_msgs.msg import Twist
+from cv_bridge import CvBridge
+
+from numpy import asarray
+import math
+import struct
+from ultralytics import RTDETR
+import json
+import re
+from openai import OpenAI
+
+
+class RosDetrNode(Node):
+    def __init__(self):
+        super().__init__("ros_detr_node")
+        self.robot_command_publisher = self.create_publisher(Twist, '/cmd_vel', 10)
+        # subscribe to the rgb camera message from Astra camera
+        self.img_subscripber = self.create_subscription(
+            Image,
+            '/Tiago_Lite/Astra_rgb/image_color',
+            self.img_callback,
+            10)
+
+        # subscribe to the pointcloud message from Astra camera
+        self.depth_subscriber = self.create_subscription(
+            PointCloud2,
+            "/Tiago_Lite/Astra_depth/point_cloud",
+            self.depth_callback,
+            10
+        )
+        
+        self.odometry_subscribe = self.create_subscription(
+            Odometry,
+            "/odom",
+            self.odom_callback,
+            10
+        )
+
+        self.coco_classes = [
+            'person', 'bicycle', 'car', 'motorcycle', 'airplane', 'bus', 'train', 'truck', 'boat', 'traffic light',
+            'fire hydrant', 'stop sign', 'parking meter', 'bench', 'bird', 'cat', 'dog', 'horse', 'sheep', 'cow',
+            'elephant', 'bear', 'zebra', 'giraffe', 'backpack', 'umbrella', 'handbag', 'tie', 'suitcase', 'frisbee',
+            'skis', 'snowboard', 'sports ball', 'kite', 'baseball bat', 'baseball glove', 'skateboard', 'surfboard',
+            'tennis racket', 'bottle', 'wine glass', 'cup', 'fork', 'knife', 'spoon', 'bowl', 'banana', 'apple',
+            'sandwich', 'orange', 'broccoli', 'carrot', 'hot dog', 'pizza', 'donut', 'cake', 'chair', 'couch',
+            'potted plant', 'bed', 'dining table', 'toilet', 'tv', 'laptop', 'mouse', 'remote', 'keyboard', 'cell phone',
+            'microwave', 'oven', 'toaster', 'sink', 'refrigerator', 'book', 'clock', 'vase', 'scissors', 'teddy bear',
+            'hair drier', 'toothbrush']
+
+        # Initialize DETR object detector
+        self.model = RTDETR('rtdetr-l.pt')
+        self.get_logger().info("============DETR Model Ready===========")
+        self.bridge = CvBridge()
+
+        self.counter = 0
+
+        self.data = []
+
+        self.depth = PointCloud2()
+
+        self.odom = Odometry()
+
+        # prevent variable not used warning
+        self.img_subscripber
+        self.depth_subscriber
+        self.task_msg = None
+        self.prompt_msg = None
+        
+        # variable reserved for storing robot memory
+        self.memory = None
+        
+        # variable reserved for storing robot state information
+        self.state = None
+
+        # initialize task to be empty
+        self.task = ""
+
+        # flag to indicate whether planning is occuring
+        self.is_planning = False
+        
+        self.func_str = ""
+
+
+    # update observation: objects detected and their positions relative to the robot
+    def img_callback(self, Image):
+        self.counter += 1
+
+        # call LLM every 20 images
+        if (not self.is_planning) and (self.counter % 20 == 0) and (self.depth is not None):
+            # start planning
+            self.is_planning = True
+            cv_image = self.bridge.imgmsg_to_cv2(Image, desired_encoding='passthrough')
+            image_rgb = cv2.cvtColor(cv_image, cv2.COLOR_BGRA2RGB)
+            results = self.model(image_rgb, save=False)[0]
+
+            boxes = results.boxes.data.tolist()
+
+            if len(self.depth.data) == 0:
+                return
+
+            for obj in boxes:
+                left, top, right, bottom = int(obj[0]), int(obj[1]), int(obj[2]), int(obj[3])
+                confidence = obj[4]
+                label = int(obj[5])
+
+                center_x = int((left + right) / 2)
+                center_y = int((top + bottom) / 2)
+
+                offset = center_y * 640 + center_x
+
+                x = struct.unpack("f", bytes([self.depth.data[offset * 12],
+                    self.depth.data[offset * 12 + 1],
+                    self.depth.data[offset * 12 + 2],
+                    self.depth.data[offset * 12 + 3]
+                ]))
+
+                y = struct.unpack("f", bytes([self.depth.data[offset * 12 + 4],
+                    self.depth.data[offset * 12 + 5],
+                    self.depth.data[offset * 12 + 6],
+                    self.depth.data[offset * 12 + 7]
+                ]))
+
+                z = struct.unpack("f", bytes([self.depth.data[offset * 12 + 8],
+                    self.depth.data[offset * 12 + 9],
+                    self.depth.data[offset * 12 + 10],
+                    self.depth.data[offset * 12 + 11]
+                ]))
+
+                if math.isnan(x[0]) or math.isnan(y[0]) or math.isnan(z[0]):
+                    print("invalid distance")
+                    continue
+
+                detected_objects = {
+                    "detected object": self.coco_classes[label],
+                    "object position": {
+                        "x": x,
+                        "y": y,
+                        "z": z
+                    },
+                    "confidence": confidence,
+                }
+
+                self.data.append(detected_objects)
+
+            # move every 20 frames
+            self.move_robot()
+            # clear detected objects
+            self.data = []
+            # set the planning flag to false
+            self.is_planning = False
+
+    # update depth map for use by img_callback
+    def depth_callback(self, Image):
+        self.depth = Image
+
+    # update odometry information for use by the robot
+    def odom_callback(self, odom):
+        self.odom = odom
+
+    # Function to execute the provided code string
+    def move_robot(self):
+        # TODO control the movement of the robot by setting its linear speed and angular speed
+        # utilize the state and memory variable to store past trajectories and state information
+        # publish Twist message containing linear speed and angular speed to control the robot
+
+
+def main(args=None):
+    rclpy.init(args=args)
+    RosDETRNode = RosDetrNode()
+    rclpy.spin(RosDETRNode)
+    RosDETRNode.destroy_node()
+    rclpy.shutdown()
+
+if __name__ == '__main__':
+    main()
