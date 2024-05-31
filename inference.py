@@ -91,6 +91,8 @@ class RosDetrNode(Node):
 
         self.func_str = ""
 
+        self.socratic = True
+
         self.init_task()
 
     def init_task(self):
@@ -106,9 +108,13 @@ class RosDetrNode(Node):
         user_prompt = user_prompt_file.read()
         user_prompt_file.close()
 
+        user_query = user_prompt + ", You are tasked with {%s}, please complete move_robot function \
+                        and command the robot to reach its objective. \
+                        Please do not output anything else other than the code." % self.task
+
 
         response = self.client.chat.completions.create(
-            model="gpt-4-turbo-preview",
+            model="gpt-4o",
             messages=[
                 {
                 "role": "system",
@@ -124,9 +130,7 @@ class RosDetrNode(Node):
                 "content": [
                     {
                     "type": "text",
-                    "text": user_prompt + ", You are tasked with {%s}, please complete move_robot function \
-                        and command the robot to reach its objective. \
-                        Please do not output anything else other than the code. Do not add anything after you finished the code." % self.task
+                    "text": user_query
                     }
                 ]
                 }
@@ -143,8 +147,52 @@ class RosDetrNode(Node):
 
         print("generated function: \n" + self.func_str)
 
-    def socratic_improvement(self):
-        pass
+        if self.socratic:
+            self.socratic_improvement(user_query, system_prompt, self.func_str)
+
+    def socratic_improvement(self, user_prompt, system_prompt, llm_answer):
+
+        response = self.client.chat.completions.create(
+            model="gpt-4-turbo-preview",
+            messages=[
+                {
+                "role": "system",
+                "content": [
+                    {
+                    "type": "text",
+                    "text": "Here is the problem statement: {%s} \
+                        and here is the contextual information: {%s} \
+                        and here is the LLM response: {%s} \
+                        Please review the python source code for any mistakes. \
+                        Please also analyze the logic of the python source code, \
+                        and reason how it achieves the desired functionality. \
+                        Please give it a score from 0 to 100 in terms of whether it can complete all the objectives, \
+                        and think carefully about how to make it score higher and fix the wrong part of the code. \
+                        Please give the modified move_robot function after these considerations" % (user_prompt, system_prompt, llm_answer)
+                    }
+                ]
+                },
+                {
+                "role": "user",
+                "content": [
+                    {
+                    "type": "text",
+                    "text": user_prompt
+                    }
+                ]
+                }
+            ],
+            temperature=1,
+            max_tokens=2048,
+            top_p=1,
+            frequency_penalty=0,
+            presence_penalty=0
+        )
+
+        func_str = response.choices[0].message.content
+        print("modified function: " + func_str)
+
+        self.func_str = func_str[func_str.find("def"):-3]
 
     # update observation: objects detected and their positions relative to the robot
     def img_callback(self, Image):
