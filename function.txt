@@ -83,6 +83,9 @@ class RosDetrNode(Node):
         # variable reserved for storing robot state information
         self.state = None
 
+        # previous position of the robot
+        self.previous_position = None
+
         # initialize task to be empty
         self.task = ""
 
@@ -170,10 +173,9 @@ class RosDetrNode(Node):
 
     # Function to execute the provided code string
     def move_robot(self):
-        # TODO control the movement of the robot by setting its linear speed and angular speed
+        # TODO control the movement of the robot by setting its linear speed and angular speed in float numbers
         # utilize the state and memory variable to store past trajectories and state information
         # publish Twist message containing linear speed and angular speed to control the robot
-
 
 def main(args=None):
     rclpy.init(args=args)

@@ -59,7 +59,7 @@ class RosDetrNode(Node):
             'hair drier', 'toothbrush']
 
         # Initialize DETR object detector
-        self.model = RTDETR('rtdetr-l.pt')
+        self.model = RTDETR('rtdetr-x.pt')
         self.get_logger().info("============DETR Model Ready===========")
         self.bridge = CvBridge()
 
@@ -84,6 +84,9 @@ class RosDetrNode(Node):
 
         # variable reserved for storing robot state information
         self.state = None
+
+        # previous position of the robot
+        self.previous_position = None
 
         self.task = ""
 
@@ -153,7 +156,7 @@ class RosDetrNode(Node):
     def socratic_improvement(self, user_prompt, system_prompt, llm_answer):
 
         response = self.client.chat.completions.create(
-            model="gpt-4-turbo-preview",
+            model="gpt-4",
             messages=[
                 {
                 "role": "system",
@@ -163,12 +166,13 @@ class RosDetrNode(Node):
                     "text": "Here is the problem statement: {%s} \
                         and here is the contextual information: {%s} \
                         and here is the LLM response: {%s} \
-                        Please review the python source code for any mistakes. \
+                        Please review the python source code for any mistakes, fix any indentation. \
                         Please also analyze the logic of the python source code, \
                         and reason how it achieves the desired functionality. \
                         Please give it a score from 0 to 100 in terms of whether it can complete all the objectives, \
-                        and think carefully about how to make it score higher and fix the wrong part of the code. \
-                        Please give the modified move_robot function after these considerations" % (user_prompt, system_prompt, llm_answer)
+                        and think carefully what is wrong with the code. \
+                        Please give an improved move_robot function after these considerations, \
+                        and do not output anything before the function. Please do not output anything other than the code" % (user_prompt, system_prompt, llm_answer)
                     }
                 ]
                 },
