@@ -80,13 +80,16 @@ class RosDetrNode(Node):
         self.client = OpenAI()
 
         # variable reserved for storing robot memory
-        self.memory = None
+        self.memory = {}
 
         # variable reserved for storing robot state information
-        self.state = None
+        self.state = []
 
         # previous position of the robot
-        self.previous_position = None
+        self.previous_position = []
+
+        # variable for storing current image frame
+        self.image = None
 
         self.task = ""
 
@@ -94,26 +97,34 @@ class RosDetrNode(Node):
 
         self.func_str = ""
 
-        self.socratic = True
+        self.socratic = False
 
         self.init_task()
 
     def init_task(self):
         self.task = input("Enter the task for the robot: ")
 
+        # construct the system prompt for chain-of-thought query
+        system_prompt = "You are an expert in robotics navigation, perception and planning."
+
         # read python script from file
         script_file = open("function.txt", "r")
-        system_prompt = script_file.read()
+        script_prompt = script_file.read()
         script_file.close()
+
+        # read chain-of-thought prompt from file
+        cot_prompt_file = open("cot.txt", "r")
+        cot_prompt = cot_prompt_file.read()
+        cot_prompt_file.close()
 
         # read user prompt from file
         user_prompt_file = open("user.txt", "r")
         user_prompt = user_prompt_file.read()
         user_prompt_file.close()
 
-        user_query = user_prompt + ", You are tasked with {%s}, please complete move_robot function \
-                        and command the robot to reach its objective. \
-                        Please do not output anything else other than the code." % self.task
+        # construct user prompt for query
+        user_query = cot_prompt + "\n You are tasked with {%s}, please break the task into subtasks, please make each subtask \
+            doable and easy to implement. Please only output the subtasks and nothing else" % self.task
 
 
         response = self.client.chat.completions.create(
@@ -144,11 +155,44 @@ class RosDetrNode(Node):
             frequency_penalty=0,
             presence_penalty=0
         )
+        cot_response = response.choices[0].message.content
+
+        print("Chain of thought substasks: \n" + cot_response)
+
+        response = self.client.chat.completions.create(
+            model="gpt-4o",
+            messages=[
+                {
+                "role": "system",
+                "content": [
+                    {
+                    "type": "text",
+                    "text": "Here is a breakdown of the task: \n" + cot_response + "\n Here is the script for controlling the robot: \n %s" % script_prompt
+                    }
+                ]
+                },
+                {
+                "role": "user",
+                "content": [
+                    {
+                    "type": "text",
+                    "text": user_prompt
+                    }
+                ]
+                }
+            ],
+            temperature=1,
+            max_tokens=2048,
+            top_p=1,
+            frequency_penalty=0,
+            presence_penalty=0
+        )
+
         func_str = response.choices[0].message.content
 
-        self.func_str = func_str[func_str.find("def"):-3]
+        print(func_str)
 
-        print("generated function: \n" + self.func_str)
+        self.func_str = func_str[func_str.find("def"):-3]
 
         if self.socratic:
             self.socratic_improvement(user_query, system_prompt, self.func_str)
@@ -156,7 +200,7 @@ class RosDetrNode(Node):
     def socratic_improvement(self, user_prompt, system_prompt, llm_answer):
 
         response = self.client.chat.completions.create(
-            model="gpt-4",
+            model="gpt-4o",
             messages=[
                 {
                 "role": "system",
@@ -187,16 +231,41 @@ class RosDetrNode(Node):
                 }
             ],
             temperature=1,
-            max_tokens=2048,
+            max_tokens=4096,
             top_p=1,
             frequency_penalty=0,
             presence_penalty=0
         )
 
         func_str = response.choices[0].message.content
-        print("modified function: " + func_str)
-
         self.func_str = func_str[func_str.find("def"):-3]
+        print("modified function: \n" + self.func_str)
+
+        # moderator kick in
+        # response = self.client.chat.completions.create(
+        #     model="gpt-3.5-turbo-16k",
+        #     messages=[
+        #         {
+        #         "role": "user",
+        #         "content": [
+        #             {
+        #             "type": "text",
+        #             "text": "please extract python code and fix any grammatical issue from this text: " + self.func_str
+        #             }
+        #         ]
+        #         }
+        #     ],
+        #     temperature=1,
+        #     max_tokens=8192,
+        #     top_p=1,
+        #     frequency_penalty=0,
+        #     presence_penalty=0
+        # )
+
+        # func_str = response.choices[0].message.content
+        # self.func_str = func_str[func_str.find("def"):-3]
+        # print("modified function: \n" + self.func_str)
+
 
     # update observation: objects detected and their positions relative to the robot
     def img_callback(self, Image):
@@ -208,6 +277,8 @@ class RosDetrNode(Node):
             self.is_planning = True
             cv_image = self.bridge.imgmsg_to_cv2(Image, desired_encoding='passthrough')
             image_rgb = cv2.cvtColor(cv_image, cv2.COLOR_BGRA2RGB)
+
+            self.image = image_rgb
             results = self.model(image_rgb, save=False)[0]
 
             boxes = results.boxes.data.tolist()
@@ -260,7 +331,8 @@ class RosDetrNode(Node):
                 self.data.append(detected_objects)
 
             # move every 20 frames
-            self.execute_robot_code()
+            if self.func_str:
+                self.execute_robot_code()
             # clear detected objects
             self.data = []
             # set the planning flag to false

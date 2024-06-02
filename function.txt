@@ -74,17 +74,20 @@ class RosDetrNode(Node):
         # prevent variable not used warning
         self.img_subscripber
         self.depth_subscriber
-        self.task_msg = None
-        self.prompt_msg = None
+        self.task_msg = ""
+        self.prompt_msg = ""
         
         # variable reserved for storing robot memory
-        self.memory = None
+        self.memory = {}
         
         # variable reserved for storing robot state information
-        self.state = None
+        self.state = []
 
         # previous position of the robot
-        self.previous_position = None
+        self.previous_position = []
+
+        # variable for storing current image frame
+        self.image = None
 
         # initialize task to be empty
         self.task = ""
@@ -105,6 +108,8 @@ class RosDetrNode(Node):
             self.is_planning = True
             cv_image = self.bridge.imgmsg_to_cv2(Image, desired_encoding='passthrough')
             image_rgb = cv2.cvtColor(cv_image, cv2.COLOR_BGRA2RGB)
+
+            self.image = image_rgb
             results = self.model(image_rgb, save=False)[0]
 
             boxes = results.boxes.data.tolist()
