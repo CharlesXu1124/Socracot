@@ -97,7 +97,8 @@ class RosDetrNode(Node):
 
         self.func_str = ""
 
-        self.socratic = False
+        # variable for switching on and off socratic improvement
+        self.socratic = True
 
         self.init_task()
 
@@ -159,6 +160,10 @@ class RosDetrNode(Node):
 
         print("Chain of thought substasks: \n" + cot_response)
 
+        # apply the socratic improvement
+        if self.socratic:
+            cot_response = self.socratic_improvement(self.task, system_prompt, cot_response)
+
         response = self.client.chat.completions.create(
             model="gpt-4o",
             messages=[
@@ -194,10 +199,8 @@ class RosDetrNode(Node):
 
         self.func_str = func_str[func_str.find("def"):-3]
 
-        if self.socratic:
-            self.socratic_improvement(user_query, system_prompt, self.func_str)
 
-    def socratic_improvement(self, user_prompt, system_prompt, llm_answer):
+    def socratic_improvement(self, task, system_prompt, llm_answer):
 
         response = self.client.chat.completions.create(
             model="gpt-4o",
@@ -207,16 +210,7 @@ class RosDetrNode(Node):
                 "content": [
                     {
                     "type": "text",
-                    "text": "Here is the problem statement: {%s} \
-                        and here is the contextual information: {%s} \
-                        and here is the LLM response: {%s} \
-                        Please review the python source code for any mistakes, fix any indentation. \
-                        Please also analyze the logic of the python source code, \
-                        and reason how it achieves the desired functionality. \
-                        Please give it a score from 0 to 100 in terms of whether it can complete all the objectives, \
-                        and think carefully what is wrong with the code. \
-                        Please give an improved move_robot function after these considerations, \
-                        and do not output anything before the function. Please do not output anything other than the code" % (user_prompt, system_prompt, llm_answer)
+                    "text": system_prompt
                     }
                 ]
                 },
@@ -225,46 +219,28 @@ class RosDetrNode(Node):
                 "content": [
                     {
                     "type": "text",
-                    "text": user_prompt
+                    "text": "Here is the problem statement: {%s} \
+                        and here is the LLM response for breakdown of the task: {%s} \
+                        Please review the list of subtasks, and try to think of the underlying reason of each subtask if it is plausible. \
+                        Please think in terms of counterfactual reasoning, what would be an alternative break down of the task that is better. \
+                        Please also make each subtask doable and not overly complicated. \
+                        Please also fix any mistakes of each subtask and avoid using any vague words. \
+                        Please only output the alternative list of subtasks."
+                            % (task, llm_answer)
                     }
                 ]
                 }
             ],
             temperature=1,
-            max_tokens=4096,
+            max_tokens=2048,
             top_p=1,
             frequency_penalty=0,
             presence_penalty=0
         )
 
-        func_str = response.choices[0].message.content
-        self.func_str = func_str[func_str.find("def"):-3]
-        print("modified function: \n" + self.func_str)
-
-        # moderator kick in
-        # response = self.client.chat.completions.create(
-        #     model="gpt-3.5-turbo-16k",
-        #     messages=[
-        #         {
-        #         "role": "user",
-        #         "content": [
-        #             {
-        #             "type": "text",
-        #             "text": "please extract python code and fix any grammatical issue from this text: " + self.func_str
-        #             }
-        #         ]
-        #         }
-        #     ],
-        #     temperature=1,
-        #     max_tokens=8192,
-        #     top_p=1,
-        #     frequency_penalty=0,
-        #     presence_penalty=0
-        # )
-
-        # func_str = response.choices[0].message.content
-        # self.func_str = func_str[func_str.find("def"):-3]
-        # print("modified function: \n" + self.func_str)
+        cot_response = response.choices[0].message.content
+        print("modified chain of thought: \n" + cot_response)
+        return cot_response
 
 
     # update observation: objects detected and their positions relative to the robot
