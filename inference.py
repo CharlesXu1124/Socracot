@@ -199,8 +199,8 @@ class RosDetrNode(Node):
 
         self.func_str = func_str[func_str.find("def"):-3]
 
-        if self.socratic:
-            self.func_str = self.socracode(script_prompt)
+        # if self.socratic:
+        #     self.func_str = self.socracode(script_prompt)
 
 
     def socracot(self, task, system_prompt, llm_answer):
@@ -309,7 +309,7 @@ class RosDetrNode(Node):
                 ]
             }
         ]
-        
+
         response = self.client.chat.completions.create(
             model="gpt-4o",
             messages=query_messages,
