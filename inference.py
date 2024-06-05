@@ -40,6 +40,7 @@ class RosDetrNode(Node):
             10
         )
 
+        # subscribe to the odometry message from IMU sensors
         self.odometry_subscribe = self.create_subscription(
             Odometry,
             "/odom",
@@ -70,6 +71,21 @@ class RosDetrNode(Node):
         self.depth = PointCloud2()
 
         self.odom = Odometry()
+
+        # initialize robot position
+        self.position = {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 0.0
+        }
+
+        # initialize robot orientation
+        self.orientation = {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 0.0,
+            "w": 0.0
+        }
 
         # prevent variable not used warning
         self.img_subscripber
@@ -398,12 +414,22 @@ class RosDetrNode(Node):
             self.is_planning = False
 
     # update depth map for use by img_callback
-    def depth_callback(self, Image):
-        self.depth = Image
+    def depth_callback(self, depth):
+        # update depth image
+        self.depth = depth
 
     # update odometry information for use by the robot
     def odom_callback(self, odom):
+        # update odometry data
         self.odom = odom
+        # unpack the odometry data and update robot position and orientation
+        self.position["x"] = odom.pose.pose.position.x
+        self.position["y"] = odom.pose.pose.position.y
+        self.position["z"] = odom.pose.pose.position.z
+        self.orientation["w"] = odom.pose.pose.orientation.w
+        self.orientation["x"] = odom.pose.pose.orientation.x
+        self.orientation["y"] = odom.pose.pose.orientation.y
+        self.orientation["z"] = odom.pose.pose.orientation.z
 
     # Function to execute the provided code string
     def execute_robot_code(self):

@@ -3,6 +3,8 @@ the camera is facing forward.
 you also have two wheels on your chassis and you can rotate in place or move linearly.
 All your sensors are already initiated and calibrated, please do not re-initialize them.
 Please only output the code for function move_robot and do not explain afterwards.
-Please actively explore the environment and change your heading to discover the objects.
+Please use visual-inertial odometry to locate the object of interest relative to you.
 Please utilize state and memory variables and odometry data to store and estimate robot state.
+Please complete only the move_robot function in the robot control script given.
+Please complete the function according to break-down list of tasks, and do not output anything else.
 Do not write additional helper function outside the move_robot function.
