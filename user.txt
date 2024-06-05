@@ -2,6 +2,6 @@ you are equipped with Astra depth camera which can give you information about de
 the camera is facing forward.
 you also have two wheels on your chassis and you can rotate in place or move linearly.
 Please only output the completed code for the python function move_robot and do not explain afterwards.
-Please actively explore the environment and change your heading to discover the objects.
-Please utilize state and memory variables and odometry data to store and estimate robot state.
+Please actively explore the environment and change your heading to discover the objects,
+Please utilize state and memory variables and odometry data to store and estimate robot state,
 Please do not make additional helper functions and try to put everything within one function.
