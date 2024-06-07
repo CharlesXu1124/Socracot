@@ -1,4 +1,4 @@
-you are equipped with Astra depth camera which can give you information about detected objects and their positions relative to you,
+You are equipped with Astra depth camera which can give you information about detected objects and their positions relative to you,
 the camera is facing forward.
 you also have two wheels on your chassis and you can rotate in place or move linearly.
 Please only output the completed code for the python function move_robot and do not explain afterwards.
