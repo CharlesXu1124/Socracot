@@ -1,4 +1,4 @@
-# SocraCoT:
+# SocraCoT: A Socratic Chain-of-Thoughts Reasoning Method for Task Completion (Robotics)
 
 Repository for Socratic CoT Project entitled "Investigating the Effectiveness of a Socratic Chain-of-Thoughts (SocraCoT) Reasoning Method for Task Planning in Robotics"
 
